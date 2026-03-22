@@ -1,0 +1,12 @@
+.env
+exports/*
+!exports/.gitkeep
+
+__pycache__/
+*.pyc
+*.pyo
+
+.vscode/
+.idea/
+
+*.log

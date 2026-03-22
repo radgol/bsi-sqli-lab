@@ -1,0 +1,17 @@
+services:
+  falco:
+    image: falcosecurity/falco:0.43.0
+    container_name: bsi-falco
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      web:
+        condition: service_started
+    volumes:
+      - /sys/kernel/tracing:/sys/kernel/tracing:ro
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - /etc:/host/etc:ro
+      - ./falco:/etc/falco/rules.d:ro
+    ports:
+      - "127.0.0.1:8765:8765"

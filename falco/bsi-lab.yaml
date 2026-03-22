@@ -1,0 +1,26 @@
+- rule: BSI Web shell in container
+  desc: shell uruchomiony w kontenerze podatnej aplikacji Flask
+  condition: >
+    (evt.type in (execve, execveat)) and
+    container and
+    container.name = bsi-web and
+    proc.name in (sh, bash, dash)
+  output: >
+    BSI LAB: shell inside web container |
+    container=%container.name user=%user.name parent=%proc.pname proc=%proc.name cmd=%proc.cmdline image=%container.image.repository
+  priority: NOTICE
+  tags: [container, process, bsi]
+
+- rule: BSI Web writes export file
+  desc: zapis pliku eksportu przez kontener aplikacji
+  condition: >
+    (evt.type in (open, openat, openat2, creat)) and
+    container and
+    container.name = bsi-web and
+    fd.name startswith /app/exports and
+    (evt.arg.flags contains O_WRONLY or evt.arg.flags contains O_RDWR or evt.arg.flags contains O_CREAT or evt.arg.flags contains O_TRUNC)
+  output: >
+    BSI LAB: export file written |
+    container=%container.name file=%fd.name proc=%proc.name cmd=%proc.cmdline user=%user.name
+  priority: NOTICE
+  tags: [container, filesystem, bsi]

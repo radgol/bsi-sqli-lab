@@ -1,0 +1,73 @@
+services:
+  db:
+    image: mariadb:11
+    container_name: bsi-db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - bsi_net
+
+  web:
+    image: ghcr.io/radgol/bsi-web-vuln:1.0
+    container_name: bsi-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_NAME: ${MARIADB_DATABASE}
+      DB_USER: ${MARIADB_USER}
+      DB_PASSWORD: ${MARIADB_PASSWORD}
+      FLASK_SECRET: ${FLASK_SECRET}
+    ports:
+      - "127.0.0.1:8080:5000"
+    volumes:
+      - ./exports:/app/exports
+    networks:
+      - bsi_net
+
+  adminer:
+    image: adminer:5
+    container_name: bsi-adminer
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - bsi_net
+
+  attackbox:
+    image: ghcr.io/radgol/bsi-attackbox:1.0
+    container_name: bsi-attackbox
+    depends_on:
+      web:
+        condition: service_started
+    tty: true
+    stdin_open: true
+    networks:
+      - bsi_net
+
+networks:
+  bsi_net:
+    driver: bridge
+
+volumes:
+  db_data:
