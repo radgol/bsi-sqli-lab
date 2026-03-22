@@ -22,7 +22,7 @@ services:
       - bsi_net
 
   web:
-    image: ghcr.io/radgol/bsi-web-vuln:1.0
+    image: ghcr.io/radgol/bsi-web-vuln:1.1
     container_name: bsi-web
     restart: unless-stopped
     depends_on:

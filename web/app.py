@@ -33,12 +33,24 @@ def page(title: str, body: str) -> str:
   <title>{title}</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 40px; background: #f7f7f7; }}
-    .card {{ background: white; padding: 20px; border-radius: 10px; max-width: 900px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }}
-    input {{ padding: 8px; margin: 4px 0; width: 100%; }}
-    button, a.btn {{ display: inline-block; padding: 10px 14px; margin-top: 8px; text-decoration: none; background: #1f5eff; color: white; border-radius: 6px; border: none; }}
-    table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
-    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+    .card {{ background: white; padding: 20px; border-radius: 10px; max-width: 980px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }}
+    input {{ padding: 8px; margin: 4px 0; width: 100%; box-sizing: border-box; }}
+    button, a.btn {{
+      display: inline-block;
+      padding: 10px 14px;
+      margin-top: 8px;
+      margin-right: 8px;
+      text-decoration: none;
+      background: #1f5eff;
+      color: white;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }}
     code {{ background: #efefef; padding: 2px 4px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }}
+    .muted {{ color: #666; }}
   </style>
 </head>
 <body>
@@ -81,21 +93,25 @@ def index():
               <input name="password" type="password" placeholder="hasło">
               <button type="submit">Zaloguj</button>
             </form>
-            <p><strong>Wskazówka dla prowadzącego:</strong> po udanym logowaniu jako admin pojawia się eksport CSV.</p>
+            <p class="muted"><strong>Wskazówka:</strong> po zalogowaniu jako admin dostępny jest eksport CSV.</p>
             """,
         )
 
     username = html.escape(user["username"])
     role = html.escape(user["role"])
-    export_link = '<p><a class="btn" href="/admin/export">Eksportuj incydenty CSV</a></p>' if role == "admin" else ""
+    export_link = '<a class="btn" href="/admin/export">Eksportuj incydenty CSV</a>' if role == "admin" else ""
+
     return page(
         "Panel użytkownika",
         f"""
         <p>Zalogowano jako: <strong>{username}</strong> (rola: <strong>{role}</strong>)</p>
         <p>Request-ID ostatniego żądania: <code>{request.reqid}</code></p>
-        <p><a class="btn" href="/incidents">Pokaż incydenty</a></p>
-        {export_link}
-        <p><a class="btn" href="/logout">Wyloguj</a></p>
+        <p>
+          <a class="btn" href="/incidents">Pokaż incydenty</a>
+          <a class="btn" href="/search">Szukaj incydentów</a>
+          {export_link}
+          <a class="btn" href="/logout">Wyloguj</a>
+        </p>
         """,
     )
 
@@ -184,6 +200,83 @@ def incidents():
     return page("Lista incydentów", table + '<p><a class="btn" href="/">Powrót</a></p>')
 
 
+@app.route("/search", methods=["GET", "POST"])
+def search():
+    user = session.get("user")
+    if not user:
+        return redirect(url_for("index"))
+
+    query_value = ""
+    rows = []
+    message = ""
+
+    if request.method == "POST":
+        query_value = request.form.get("severity", "")
+
+        # CELOWO PODATNE
+        sql = (
+            f"SELECT id, title, severity, owner, notes "
+            f"FROM incidents "
+            f"WHERE severity = '{query_value}' "
+            f"ORDER BY id"
+        )
+
+        app.logger.warning(
+            "reqid=%s ip=%s method=%s path=%s UNSAFE_SQL=%s",
+            request.reqid,
+            request.remote_addr,
+            request.method,
+            request.path,
+            sql,
+        )
+
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        message = f"<p class='muted'>Liczba znalezionych rekordów: <strong>{len(rows)}</strong></p>"
+
+    form_html = f"""
+    <p>Wyszukiwanie według poziomu incydentu, np. <code>low</code>, <code>medium</code>, <code>high</code>, <code>critical</code>.</p>
+    <form method="post">
+      <label>Poziom incydentu</label>
+      <input name="severity" value="{html.escape(query_value)}" placeholder="np. high">
+      <button type="submit">Szukaj</button>
+    </form>
+    """
+
+    table_html = ""
+    if rows:
+        lines = []
+        for row in rows:
+            lines.append(
+                "<tr>"
+                f"<td>{row['id']}</td>"
+                f"<td>{html.escape(row['title'])}</td>"
+                f"<td>{html.escape(row['severity'])}</td>"
+                f"<td>{html.escape(row['owner'])}</td>"
+                f"<td>{html.escape(row['notes'])}</td>"
+                "</tr>"
+            )
+
+        table_html = """
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Tytuł</th><th>Poziom</th><th>Właściciel</th><th>Notatki</th></tr>
+          </thead>
+          <tbody>
+        """ + "\n".join(lines) + "</tbody></table>"
+
+    return page(
+        "Wyszukiwanie incydentów",
+        form_html + message + table_html + '<p><a class="btn" href="/">Powrót</a></p>',
+    )
+
+
 @app.route("/admin/export")
 def export_incidents():
     user = session.get("user")
@@ -197,7 +290,7 @@ def export_incidents():
     )
 
     # CELOWO "efektowne" — uruchomienie shell-a w kontenerze,
-    # aby Falco mogło to ładnie wykryć.
+    # aby Falco mogło to wykryć.
     subprocess.run(["sh", "-c", "python /app/export.py"], check=True)
 
     output_file = "/app/exports/incidents.csv"

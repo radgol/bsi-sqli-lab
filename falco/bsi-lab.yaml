@@ -1,26 +1,65 @@
 - rule: BSI Web shell in container
   desc: shell uruchomiony w kontenerze podatnej aplikacji Flask
   condition: >
-    (evt.type in (execve, execveat)) and
     container and
     container.name = bsi-web and
+    (evt.type in (execve, execveat)) and
     proc.name in (sh, bash, dash)
   output: >
     BSI LAB: shell inside web container |
     container=%container.name user=%user.name parent=%proc.pname proc=%proc.name cmd=%proc.cmdline image=%container.image.repository
   priority: NOTICE
-  tags: [container, process, bsi]
+  tags: [bsi, container, process]
+
+- rule: BSI DB shell in container
+  desc: shell uruchomiony w kontenerze bazy danych
+  condition: >
+    container and
+    container.name = bsi-db and
+    (evt.type in (execve, execveat)) and
+    proc.name in (sh, bash, dash)
+  output: >
+    BSI LAB: shell inside db container |
+    container=%container.name user=%user.name parent=%proc.pname proc=%proc.name cmd=%proc.cmdline image=%container.image.repository
+  priority: WARNING
+  tags: [bsi, container, process]
 
 - rule: BSI Web writes export file
   desc: zapis pliku eksportu przez kontener aplikacji
   condition: >
-    (evt.type in (open, openat, openat2, creat)) and
     container and
     container.name = bsi-web and
-    fd.name startswith /app/exports and
-    (evt.arg.flags contains O_WRONLY or evt.arg.flags contains O_RDWR or evt.arg.flags contains O_CREAT or evt.arg.flags contains O_TRUNC)
+    evt.is_open_write=true and
+    fd.name startswith /app/exports
   output: >
     BSI LAB: export file written |
     container=%container.name file=%fd.name proc=%proc.name cmd=%proc.cmdline user=%user.name
   priority: NOTICE
-  tags: [container, filesystem, bsi]
+  tags: [bsi, container, filesystem]
+
+- rule: BSI Web reads exported file
+  desc: odczyt pliku eksportu przez kontener aplikacji
+  condition: >
+    container and
+    container.name = bsi-web and
+    (evt.type in (open, openat, openat2)) and
+    fd.name startswith /app/exports and
+    evt.is_open_read=true
+  output: >
+    BSI LAB: exported file read |
+    container=%container.name file=%fd.name proc=%proc.name cmd=%proc.cmdline user=%user.name
+  priority: NOTICE
+  tags: [bsi, container, filesystem]
+
+- rule: BSI Web reads sensitive passwd file
+  desc: kontener web czyta /etc/passwd
+  condition: >
+    container and
+    container.name = bsi-web and
+    (evt.type in (open, openat, openat2)) and
+    fd.name = /etc/passwd
+  output: >
+    BSI LAB: web container read sensitive file |
+    container=%container.name file=%fd.name proc=%proc.name cmd=%proc.cmdline user=%user.name
+  priority: WARNING
+  tags: [bsi, container, filesystem]
